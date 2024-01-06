@@ -10,6 +10,7 @@ public interface BattleshipPlayer {
 	/**
 	 * Wird am Anfang eines Spiels 1x aufgerufen und legt fest, wo der Gegner das eigene Schiff finden soll.
 	 * Beachte, dass diese Methode bei mehreren Runden (z.B. Hin- und Rückspiel) mehrfach aufgerufen wird.
+	 *
 	 * @return Koordinaten wo das eigene Schiffchen für das folgende Spiel versteckt liegt.
 	 */
 	ShipPosition placeYourShip();
@@ -17,26 +18,41 @@ public interface BattleshipPlayer {
 	/**
 	 * Du bist an der Reihe mit Deinem Zug. Wo vermutest Du das gegnerische Schiff?
 	 * Wird in einem Spiel pro Zug 1x aufgerufen.
-	 * @param lastShotWasHit {@code true}, falls das gegnerische Schiff im <b>letzten</b> Zug getroffen wurde.
+	 *
 	 * @return Die Koordinate wo das Schiff des Gegners vermutet wird.
 	 */
-	BattleshipField aimAt(boolean lastShotWasHit);
+	BattleshipField takeAim();
 
 	/**
-	 * Die Zielposition des Gegners. Wird 1x nach dem gegnerischen Zug aufgerufen.
-	 * Muss nicht implementiert werden, ist aber eine Möglichkeit die Strategie des Gegners zu lernen.
-	 * @param position wohin der Gegner gezielt hat.
+	 * Wird 1x <b>nach dem eigenen Zug</b> {@link #takeAim()} aufgerufen und informiert ob der Gegner getroffen wurde.
+	 * Muss nicht zwingend implementiert werden, aber ist auf jeden Fall sinnvoll.
+	 *
+	 * @param targetedField das Feld welches zuvor mit {@code takeAim()} angezielt wurde.
+	 * @param isHit {@code true}, falls das gegnerische Schiff getroffen wurde.
 	 */
-	default void opponentAimsAt(BattleshipField position) {
+	default void outcomeOfYourTurn(BattleshipField targetedField, boolean isHit) {
+
+	}
+
+	/**
+	 * Wird 1x <b>nach dem gegnerischen Zug</b> aufgerufen und informiert, wo der Gegner hinzielte.
+	 * Muss nicht implementiert werden, ist aber eine Möglichkeit die Strategie des Gegners zu lernen.
+	 *
+	 * @param targetedField wohin der Gegner gezielt hat.
+	 * @param isHit {@code true}, falls das eigene Schiff dadurch getroffen wurde.
+	 */
+	default void outcomeOfOpponentsTurn(BattleshipField targetedField, boolean isHit) {
 
 	}
 
 	/**
 	 * Das Endresultat dieser Spielrunde. Wird 1x am Ende einer Partie aufgerufen.
 	 * Muss nicht implementiert werden, ist aber eine Möglichkeit die Strategie des Gegners zu lernen.
+	 *
+	 * @param opponentShip wo das gegnerische Schiff versteckt war.
 	 * @param youHaveWon true, falls dieser Spieler als erster das gegnerische Schiff komplett getroffen hat.
 	 */
-	default void gameFinished(boolean youHaveWon) {
+	default void gameFinished(ShipPosition opponentShip, boolean youHaveWon) {
 
 	}
 

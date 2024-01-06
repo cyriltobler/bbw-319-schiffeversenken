@@ -2,9 +2,11 @@
 
 Implementiere eine eigene Schiffeversenken-KI.
 
-* Lies den API-Contract im `api` package. 📜
-* Spielt zu zweit auf der Konsole mit dem `HumanPlayer`. 🧠
-* Erstelle einen eigenen Computer-Player. 🤖
-  ** Starte mit der `MyPlayer` Klasse. Benenne sie um in `<DeinName>Player`.
-  ** Aller Code muss in dieses eine Java-File. ☕
-* Battle mit anderen Spielern. ⚔️
+* 📜 Lies den API-Contract im `api` package.
+* 🧠 Spielt zu zweit auf der Konsole mit dem `HumanPlayer`.
+* 🤖 Erstelle einen eigenen Computer-Player.
+  ** ⚠️ Starte mit der `MyPlayer` Klasse. Benenne sie um in `<DeinName>Player`.
+     Aller Code muss in dieses eine Java-File.
+  ** 🎲 Implementiere zuerst einen Spieler, welcher zufällig, aber legal spielt.
+  ** 📈 Optimiere...
+* ⚔️ Battle mit anderen Spielern.

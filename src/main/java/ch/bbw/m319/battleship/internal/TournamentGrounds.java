@@ -1,5 +1,6 @@
 package ch.bbw.m319.battleship.internal;
 
+import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -8,57 +9,24 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
-import ch.bbw.m319.battleship.HumanPlayer;
+import ch.bbw.m319.battleship.api.BattleshipArena.GameResult;
 import ch.bbw.m319.battleship.api.BattleshipField;
 import ch.bbw.m319.battleship.api.BattleshipPlayer;
 import ch.bbw.m319.battleship.api.ShipPosition;
 
 /**
- * Do NOT look at this implementation. Only use its public methods.
+ * Do NOT look at this implementation. Use {@link ch.bbw.m319.battleship.api.BattleshipArena} instead.
  */
-public record BattleshipArena(BattleshipPlayer player1, BattleshipPlayer player2) {
+public record TournamentGrounds(BattleshipPlayer player1, BattleshipPlayer player2) {
 
-	private static final int MAX_ROUNDS_PER_GAME = 100;
+	public static final int MAX_ROUNDS_PER_GAME = 100;
 
-	private static final long NO_TIMEOUT = 0;
-
-	static long TIMEOUT_MS = NO_TIMEOUT;
-
-	static boolean LOG_ENABLED = true;
-
-	public static void log(String msg) {
-		if (LOG_ENABLED) {
-			System.err.println(msg);
-		}
-	}
-
-	/**
-	 * A simple, single round of Battleship, where player 1 will go first.
-	 */
-	public static GameResult play(BattleshipPlayer player1, BattleshipPlayer player2) {
-		var result = new BattleshipArena(player1, player2).playInternal(true);
-		log("outcome (from player 1 pov): " + result);
-		return result;
-	}
-
-	public GameResult playMultiple(int rounds) {
-		var player1WinCounter = 0;
-		for (int i = 0; i < rounds; i++) {
-			player1WinCounter += switch (playTwo()) {
-				case WIN -> 1;
-				case DRAW -> 0;
-				case LOSS -> -1;
-			};
-		}
-		var result = player1WinCounter == 0 ? GameResult.DRAW : (player1WinCounter > 0 ? GameResult.WIN : GameResult.LOSS);
-		log("outcome (from player 1 pov) after " + rounds + " rounds: " + result);
-		return result;
-	}
+	private static final Duration MAX_TURN_DURATION = Duration.ofMillis(100);
 
 	/**
 	 * Turnament mode, with both players going first once.
 	 */
-	public GameResult playTwo() {
+	public GameResult playTurnamentMode() {
 		var game1 = playIgnoreCrash(true);
 		var game2 = playIgnoreCrash(false);
 		return game1 == game2 ? game1 : GameResult.DRAW;
@@ -67,31 +35,33 @@ public record BattleshipArena(BattleshipPlayer player1, BattleshipPlayer player2
 	/**
 	 * Turnament mode, wher a crash is rated as a loss for the affected player.
 	 */
-	public GameResult playIgnoreCrash(boolean startWithPlayer1) {
+	private GameResult playIgnoreCrash(boolean startWithPlayer1) {
 		try {
-			return playInternal(startWithPlayer1);
+			return playInternal(startWithPlayer1, MAX_TURN_DURATION);
 		} catch (GameRulesViolatedException e) {
-			if (LOG_ENABLED) {
-				e.printStackTrace();
-			}
-			log("player " + e.offender.getClass().getSimpleName() + " was misbehaving: " + e.getMessage());
+			System.err.println("player " + e.offender.getClass().getSimpleName() + " was misbehaving: " + e.getMessage());
 			return e.offender == player1 ? GameResult.LOSS : GameResult.WIN;
 		}
 	}
 
-	private GameResult playInternal(boolean startWithPlayer1) {
-		var p1 = new PlayerState(player1);
-		var p2 = new PlayerState(player2);
+	public GameResult playDebugMode() {
+		return playInternal(true, null);
+	}
+
+	private GameResult playInternal(boolean startWithPlayer1, Duration timeout) {
+		var p1 = new PlayerState(player1, timeout);
+		var p2 = new PlayerState(player2, timeout);
 		var active = startWithPlayer1 ? p1 : p2;
 		var opponent = startWithPlayer1 ? p2 : p1;
 		for (int i = 0; i < MAX_ROUNDS_PER_GAME; i++) {
-			var target = active.aimAt(active.lastWasHit);
-			opponent.opponentAimsAt(target);
+			var target = active.takeAim();
 			active.lastWasHit = opponent.ship.contains(target);
+			active.outcomeOfYourTurn(target, active.lastWasHit);
+			opponent.outcomeOfOpponentsTurn(target, active.lastWasHit);
 			if (active.lastWasHit) {
 				if (active.lastHit != null && active.lastHit != target) { // we have a winner!
-					active.gameFinished(true);
-					opponent.gameFinished(false);
+					active.gameFinished(opponent.ship, true);
+					opponent.gameFinished(active.ship, false);
 					return active == p1 ? GameResult.WIN : GameResult.LOSS;
 				}
 				active.lastHit = target;
@@ -103,10 +73,6 @@ public record BattleshipArena(BattleshipPlayer player1, BattleshipPlayer player2
 		}
 		// that took too long
 		return GameResult.DRAW;
-	}
-
-	public enum GameResult {
-		WIN, DRAW, LOSS
 	}
 
 	public static class GameRulesViolatedException extends RuntimeException {
@@ -129,14 +95,17 @@ public record BattleshipArena(BattleshipPlayer player1, BattleshipPlayer player2
 
 		private final BattleshipPlayer player;
 
+		private final Duration timeout;
+
 		private final ShipPosition ship;
 
 		private BattleshipField lastHit;
 
 		private boolean lastWasHit;
 
-		private PlayerState(BattleshipPlayer player) {
+		private PlayerState(BattleshipPlayer player, Duration timeout) {
 			this.player = player;
+			this.timeout = timeout;
 			this.ship = placeYourShip();
 		}
 
@@ -144,13 +113,12 @@ public record BattleshipArena(BattleshipPlayer player1, BattleshipPlayer player2
 		 * prevent missbehaving players from ruining a turnament.
 		 */
 		private <T> T timed(Supplier<T> exec) {
-			var timeout = player.getClass().equals(HumanPlayer.class) ? NO_TIMEOUT : TIMEOUT_MS; // humans are slow...
+			if (timeout == null) {
+				return exec.get(); // no wrapping requested
+			}
 			var future = executor.submit(exec::get);
 			try {
-				if (timeout == NO_TIMEOUT) {
-					return future.get();
-				}
-				return future.get(timeout, TimeUnit.MILLISECONDS);
+				return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
 			} catch (TimeoutException e) {
 				future.cancel(true);
 				throw new GameRulesViolatedException(player, "operation took too long", e);
@@ -168,22 +136,30 @@ public record BattleshipArena(BattleshipPlayer player1, BattleshipPlayer player2
 		}
 
 		@Override
-		public BattleshipField aimAt(boolean lastShotWasHit) {
-			return timed(() -> Objects.requireNonNull(player.aimAt(lastShotWasHit)));
+		public BattleshipField takeAim() {
+			return timed(() -> Objects.requireNonNull(player.takeAim()));
 		}
 
 		@Override
-		public void opponentAimsAt(BattleshipField position) {
+		public void outcomeOfYourTurn(BattleshipField targetedField, boolean isHit) {
 			timed(() -> {
-				player.opponentAimsAt(position);
+				player.outcomeOfYourTurn(targetedField, isHit);
 				return null;
 			});
 		}
 
 		@Override
-		public void gameFinished(boolean youHaveWon) {
+		public void outcomeOfOpponentsTurn(BattleshipField targetedField, boolean isHit) {
 			timed(() -> {
-				player.gameFinished(youHaveWon);
+				player.outcomeOfOpponentsTurn(targetedField, isHit);
+				return null;
+			});
+		}
+
+		@Override
+		public void gameFinished(ShipPosition ship, boolean youHaveWon) {
+			timed(() -> {
+				player.gameFinished(ship, youHaveWon);
 				return null;
 			});
 		}
